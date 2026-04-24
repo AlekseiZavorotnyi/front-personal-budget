@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers/api_providers.dart';
 import '../../core/services/token_storage.dart';
 import '../transactions/transactions_providers.dart';
+import 'edit_transaction_sheet.dart';
 
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
@@ -89,25 +90,62 @@ class HomePage extends ConsumerWidget {
                     itemCount: list.length,
                     itemBuilder: (context, i) {
                       final t = list[i];
-                      return ListTile(
-                        leading: Icon(
-                          t.type == "income"
-                              ? Icons.arrow_upward
-                              : Icons.arrow_downward,
-                          color: t.type == "income"
-                              ? Colors.green
-                              : Colors.red,
+                      final deleteTransaction = ref.read(deleteTransactionProvider);
+
+                      return Dismissible(
+                        key: ValueKey(t.id),
+                        direction: DismissDirection.endToStart,
+                        background: Container(
+                          color: Colors.red,
+                          alignment: Alignment.centerRight,
+                          padding: const EdgeInsets.only(right: 20),
+                          child: const Icon(Icons.delete, color: Colors.white),
                         ),
-                        title: Text(t.categoryName ?? "Без категории"),
-                        subtitle: Text(t.comment ?? "Без комментария"),
-                        trailing: Text(
-                          '${t.type == "income" ? "+" : "-"}${t.amount} ₽',
-                          style: TextStyle(
-                            color: t.type == "income"
-                                ? Colors.green
-                                : Colors.red,
-                            fontWeight: FontWeight.bold,
+                        confirmDismiss: (_) async {
+                          return await showDialog(
+                            context: context,
+                            builder: (_) => AlertDialog(
+                              title: const Text("Удалить транзакцию?"),
+                              content: const Text("Это действие нельзя отменить."),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, false),
+                                  child: const Text("Отмена"),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text("Удалить"),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        onDismissed: (_) async {
+                          list.removeAt(i);
+                          ref.invalidate(transactionsProvider);
+                          await deleteTransaction(t.id);
+                        },
+                        child: ListTile(
+                          leading: Icon(
+                            t.type == "income" ? Icons.arrow_upward : Icons.arrow_downward,
+                            color: t.type == "income" ? Colors.green : Colors.red,
                           ),
+                          title: Text(t.categoryName ?? "Без категории"),
+                          subtitle: Text(t.comment ?? "Без комментария"),
+                          trailing: Text(
+                            '${t.type == "income" ? "+" : "-"}${t.amount} ₽',
+                            style: TextStyle(
+                              color: t.type == "income" ? Colors.green : Colors.red,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          onTap: () {
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              builder: (_) => EditTransactionSheet(transaction: t),
+                            );
+                          },
                         ),
                       );
                     },

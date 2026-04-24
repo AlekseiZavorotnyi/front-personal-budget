@@ -47,3 +47,44 @@ final addTransactionProvider = Provider((ref) {
 
   return addTransaction;
 });
+
+final deleteTransactionProvider = Provider((ref) {
+  final api = ref.watch(apiClientProvider);
+
+  Future<void> deleteTransaction(String id) async {
+    await api.dio.delete('/api/transactions/$id');
+
+    ref.invalidate(transactionsProvider);
+    ref.invalidate(balanceProvider);
+  }
+
+  return deleteTransaction;
+});
+
+final updateTransactionProvider = Provider((ref) {
+  final api = ref.watch(apiClientProvider);
+
+  Future<void> updateTransaction({
+    required String id,
+    required String type,
+    required double amount,
+    required String date,
+    required String comment,
+  }) async {
+    await api.dio.patch(
+      '/api/transactions/$id',
+      data: {
+        "type": type,
+        "amount": amount,
+        "date": date,
+        "comment": comment,
+        "description": comment
+      },
+    );
+
+    ref.invalidate(transactionsProvider);
+    ref.invalidate(balanceProvider);
+  }
+
+  return updateTransaction;
+});
