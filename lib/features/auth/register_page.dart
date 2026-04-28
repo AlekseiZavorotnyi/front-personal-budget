@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/services/token_storage.dart';
-import 'auth_controller.dart';
+import 'register_controller.dart';
 
-class LoginPage extends ConsumerWidget {
-  const LoginPage({super.key});
+class RegisterPage extends ConsumerWidget {
+  const RegisterPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(authControllerProvider);
+    final state = ref.watch(registerControllerProvider);
 
     return Scaffold(
       body: Center(
@@ -21,10 +20,21 @@ class LoginPage extends ConsumerWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  'Вход',
+                  'Регистрация',
                   style: Theme.of(context).textTheme.headlineMedium,
                 ),
                 const SizedBox(height: 32),
+
+                TextField(
+                  decoration: const InputDecoration(
+                    labelText: 'Имя (необязательно)',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) => ref
+                      .read(registerControllerProvider.notifier)
+                      .setName(value),
+                ),
+                const SizedBox(height: 16),
 
                 TextField(
                   decoration: const InputDecoration(
@@ -32,7 +42,7 @@ class LoginPage extends ConsumerWidget {
                     border: OutlineInputBorder(),
                   ),
                   onChanged: (value) => ref
-                      .read(authControllerProvider.notifier)
+                      .read(registerControllerProvider.notifier)
                       .setEmail(value),
                 ),
                 const SizedBox(height: 16),
@@ -44,8 +54,20 @@ class LoginPage extends ConsumerWidget {
                     border: OutlineInputBorder(),
                   ),
                   onChanged: (value) => ref
-                      .read(authControllerProvider.notifier)
+                      .read(registerControllerProvider.notifier)
                       .setPassword(value),
+                ),
+                const SizedBox(height: 16),
+
+                TextField(
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Повторите пароль',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) => ref
+                      .read(registerControllerProvider.notifier)
+                      .setConfirmPassword(value),
                 ),
                 const SizedBox(height: 24),
 
@@ -56,24 +78,24 @@ class LoginPage extends ConsumerWidget {
                         ? null
                         : () async {
                       final success = await ref
-                          .read(authControllerProvider.notifier)
-                          .login(context);
+                          .read(registerControllerProvider.notifier)
+                          .register(context);
 
                       if (success && context.mounted) {
-                        context.go('/');
+                        context.go('/login');
                       }
                     },
                     child: state.isLoading
                         ? const CircularProgressIndicator()
-                        : const Text('Войти'),
+                        : const Text('Создать аккаунт'),
                   ),
                 ),
 
                 const SizedBox(height: 16),
 
                 TextButton(
-                  onPressed: () => context.go('/register'),
-                  child: const Text('Создать аккаунт'),
+                  onPressed: () => context.go('/login'),
+                  child: const Text('У меня уже есть аккаунт'),
                 ),
 
                 if (state.error != null) ...[
