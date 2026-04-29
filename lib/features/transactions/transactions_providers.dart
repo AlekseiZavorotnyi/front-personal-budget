@@ -10,7 +10,9 @@ final transactionsProvider = FutureProvider<List<TransactionModel>>((ref) async 
   final data = response.data as Map<String, dynamic>;
 
   if (data['mocked'] == true) {
-    throw StateError('Сервер вернул моковые транзакции');
+    throw Exception(
+      'Сервер вернул моковые транзакции. Перезапустите бэк после обновления.',
+    );
   }
 
   final items = data['items'] as List;

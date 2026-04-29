@@ -177,13 +177,18 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage> {
 
   String _formatError(Object error) {
     if (error is DioException) {
+      final statusCode = error.response?.statusCode;
       final responseData = error.response?.data;
 
       if (responseData is Map && responseData['message'] != null) {
         return responseData['message'].toString();
       }
 
-      return error.message ?? "Не удалось добавить транзакцию";
+      if (statusCode != null) {
+        return "Сервер вернул ошибку $statusCode";
+      }
+
+      return "Не удалось добавить транзакцию";
     }
 
     return "Не удалось добавить транзакцию";

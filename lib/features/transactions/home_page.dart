@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -64,7 +65,7 @@ class HomePage extends ConsumerWidget {
                 ),
               ),
               loading: () => const CircularProgressIndicator(),
-              error: (e, _) => Text('Ошибка: $e'),
+              error: (e, _) => Text('Ошибка: ${_formatError(e)}'),
             ),
 
             const SizedBox(height: 24),
@@ -113,12 +114,38 @@ class HomePage extends ConsumerWidget {
                   );
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Text('Ошибка: $e'),
+                error: (e, _) => Text('Ошибка: ${_formatError(e)}'),
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  String _formatError(Object error) {
+    if (error is DioException) {
+      final statusCode = error.response?.statusCode;
+      final responseData = error.response?.data;
+
+      if (responseData is Map && responseData['message'] != null) {
+        return responseData['message'].toString();
+      }
+
+      if (statusCode != null) {
+        return 'сервер вернул ошибку $statusCode';
+      }
+
+      return 'не удалось получить транзакции';
+    }
+
+    final message = error.toString();
+    const exceptionPrefix = 'Exception: ';
+
+    if (message.startsWith(exceptionPrefix)) {
+      return message.substring(exceptionPrefix.length);
+    }
+
+    return message;
   }
 }
