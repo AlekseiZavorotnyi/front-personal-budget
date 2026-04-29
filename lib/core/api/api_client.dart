@@ -7,8 +7,14 @@ class ApiClient {
   ApiClient._(this._dio);
 
   factory ApiClient({String? baseUrl}) {
+    final resolvedBaseUrl = baseUrl ??
+        const String.fromEnvironment(
+          'API_BASE_URL',
+          defaultValue: 'http://localhost:8080',
+        );
+
     final dio = Dio(BaseOptions(
-      baseUrl: 'http://localhost:8080',
+      baseUrl: resolvedBaseUrl,
       headers: {'Content-Type': 'application/json'},
     ));
 

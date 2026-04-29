@@ -1,23 +1,28 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/providers/api_providers.dart';
+
 import '../../core/models/transaction_model.dart';
+import '../../core/providers/api_providers.dart';
 
 final transactionsProvider = FutureProvider<List<TransactionModel>>((ref) async {
   final api = ref.watch(apiClientProvider);
 
   final response = await api.dio.get('/api/transactions');
+  final data = response.data as Map<String, dynamic>;
 
-  final items = response.data['items'] as List;
+  if (data['mocked'] == true) {
+    throw StateError('Сервер вернул моковые транзакции');
+  }
 
-  return items
-      .map((e) => TransactionModel.fromJson(e))
-      .toList();
+  final items = data['items'] as List;
+
+  return items.map((e) => TransactionModel.fromJson(e)).toList();
 });
 
 final balanceProvider = FutureProvider<double>((ref) async {
   final list = await ref.watch(transactionsProvider.future);
-  return list.fold<double>(0.0, (sum, t) =>
-  sum + (t.type == "expense" ? -t.amount : t.amount)
+  return list.fold<double>(
+    0.0,
+    (sum, t) => sum + (t.type == "expense" ? -t.amount : t.amount),
   );
 });
 
@@ -37,9 +42,9 @@ final addTransactionProvider = Provider((ref) {
         "amount": amount,
         "date": date,
         "comment": comment,
+        "description": comment,
       },
     );
-
 
     ref.invalidate(transactionsProvider);
     ref.invalidate(balanceProvider);

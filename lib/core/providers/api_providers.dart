@@ -4,7 +4,7 @@ import '../repositories/auth_repository.dart';
 import '../services/token_storage.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) {
-  return ApiClient(baseUrl: 'http://localhost:8080');
+  return ApiClient();
 });
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {

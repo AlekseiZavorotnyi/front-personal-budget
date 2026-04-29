@@ -1,8 +1,8 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:front_personal_budget/features/transactions/transactions_providers.dart';
 import 'package:go_router/go_router.dart';
-
 
 class AddTransactionPage extends ConsumerStatefulWidget {
   const AddTransactionPage({super.key});
@@ -13,11 +13,20 @@ class AddTransactionPage extends ConsumerStatefulWidget {
 
 class _AddTransactionPageState extends ConsumerState<AddTransactionPage> {
   final _formKey = GlobalKey<FormState>();
+  final _amountController = TextEditingController();
+  final _commentController = TextEditingController();
 
   String type = "expense";
-  double amount = 0;
-  String comment = "";
   DateTime date = DateTime.now();
+  bool _isSaving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    _commentController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,14 +34,12 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text("Добавить транзакцию")),
-
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
           child: ListView(
             children: [
-
               DropdownButtonFormField<String>(
                 value: type,
                 items: const [
@@ -46,18 +53,31 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage> {
               const SizedBox(height: 16),
 
               TextFormField(
+                controller: _amountController,
                 decoration: const InputDecoration(labelText: "Сумма"),
-                keyboardType: TextInputType.number,
-                validator: (v) =>
-                (double.tryParse(v ?? "") == null) ? "Введите число" : null,
-                onChanged: (v) => amount = double.tryParse(v) ?? 0,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                validator: (v) {
+                  final amount = _parseAmount(v);
+
+                  if (amount == null) {
+                    return "Введите число";
+                  }
+
+                  if (amount <= 0) {
+                    return "Сумма должна быть больше нуля";
+                  }
+
+                  return null;
+                },
               ),
 
               const SizedBox(height: 16),
 
               TextFormField(
+                controller: _commentController,
                 decoration: const InputDecoration(labelText: "Комментарий"),
-                onChanged: (v) => comment = v,
               ),
 
               const SizedBox(height: 16),
@@ -92,25 +112,80 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage> {
 
               const SizedBox(height: 24),
 
+              if (_error != null) ...[
+                Text(
+                  _error!,
+                  style: const TextStyle(color: Colors.red),
+                ),
+                const SizedBox(height: 16),
+              ],
+
               FilledButton(
-                onPressed: () async {
-                  if (!_formKey.currentState!.validate()) return;
+                onPressed: _isSaving
+                    ? null
+                    : () async {
+                        if (!_formKey.currentState!.validate()) return;
 
-                  await addTransaction(
-                    type: type,
-                    amount: amount,
-                    date: date.toIso8601String().substring(0, 10),
-                    comment: comment,
-                  );
+                        setState(() {
+                          _isSaving = true;
+                          _error = null;
+                        });
 
-                  context.pop();
-                },
-                child: const Text("Добавить"),
+                        try {
+                          await addTransaction(
+                            type: type,
+                            amount: _parseAmount(_amountController.text)!,
+                            date: date.toIso8601String().substring(0, 10),
+                            comment: _commentController.text.trim(),
+                          );
+
+                          if (context.mounted) {
+                            context.pop();
+                          }
+                        } catch (error) {
+                          if (!mounted) return;
+
+                          setState(() {
+                            _error = _formatError(error);
+                          });
+                        } finally {
+                          if (mounted) {
+                            setState(() {
+                              _isSaving = false;
+                            });
+                          }
+                        }
+                      },
+                child: _isSaving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text("Добавить"),
               ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  double? _parseAmount(String? value) {
+    return double.tryParse((value ?? "").trim().replaceAll(",", "."));
+  }
+
+  String _formatError(Object error) {
+    if (error is DioException) {
+      final responseData = error.response?.data;
+
+      if (responseData is Map && responseData['message'] != null) {
+        return responseData['message'].toString();
+      }
+
+      return error.message ?? "Не удалось добавить транзакцию";
+    }
+
+    return "Не удалось добавить транзакцию";
   }
 }
