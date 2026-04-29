@@ -8,13 +8,6 @@ final transactionsProvider = FutureProvider<List<TransactionModel>>((ref) async 
 
   final response = await api.dio.get('/api/transactions');
   final data = response.data as Map<String, dynamic>;
-
-  if (data['mocked'] == true) {
-    throw Exception(
-      'Сервер вернул моковые транзакции. Перезапустите бэк после обновления.',
-    );
-  }
-
   final items = data['items'] as List;
 
   return items.map((e) => TransactionModel.fromJson(e)).toList();
