@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/auth/login_page.dart';
 import '../../features/auth/register_page.dart';
+import '../../features/transactions/add_transaction_page.dart';
 import '../../features/transactions/home_page.dart';
 import '../providers/api_providers.dart';
 
@@ -40,6 +41,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/register',
         builder: (context, state) => const RegisterPage(),
       ),
+      GoRoute(
+        path: '/add',
+        builder: (context, state) => const AddTransactionPage(),
+      ),
+
     ],
   );
 });
