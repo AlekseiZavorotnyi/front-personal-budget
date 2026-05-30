@@ -21,6 +21,11 @@ class HomePage extends ConsumerWidget {
         title: const Text('Личный бюджет'),
         actions: [
           IconButton(
+            tooltip: "Категории",
+            icon: const Icon(Icons.category_outlined),
+            onPressed: () => context.push('/categories'),
+          ),
+          IconButton(
             tooltip: "Выйти",
             icon: const Icon(Icons.logout_rounded),
             onPressed: () {

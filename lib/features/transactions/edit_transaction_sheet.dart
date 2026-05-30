@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../transactions/transactions_providers.dart';
 import '../../core/models/transaction_model.dart';
+import 'categories_providers.dart';
 
 class EditTransactionSheet extends ConsumerStatefulWidget {
   final TransactionModel transaction;
@@ -19,6 +20,8 @@ class _EditTransactionSheetState extends ConsumerState<EditTransactionSheet> {
   late double amount;
   late String comment;
   late DateTime date;
+  late String? categoryId;
+
 
   @override
   void initState() {
@@ -27,11 +30,13 @@ class _EditTransactionSheetState extends ConsumerState<EditTransactionSheet> {
     amount = widget.transaction.amount;
     comment = widget.transaction.comment ?? "";
     date = widget.transaction.date;
+    categoryId = widget.transaction.categoryId;
   }
 
   @override
   Widget build(BuildContext context) {
     final updateTransaction = ref.watch(updateTransactionProvider);
+    final categoriesAsync = ref.watch(categoriesProvider);
 
     return Padding(
       padding: EdgeInsets.only(
@@ -84,6 +89,45 @@ class _EditTransactionSheetState extends ConsumerState<EditTransactionSheet> {
 
             const SizedBox(height: 16),
 
+            categoriesAsync.when(
+              data: (categories) {
+                return DropdownButtonFormField<String>(
+                  value: categoryId,
+                  items: categories
+                      .map((c) => DropdownMenuItem(
+                    value: c.id,
+                    child: Text(c.name),
+                  ))
+                      .toList(),
+                  onChanged: (v) => setState(() => categoryId = v),
+                  decoration: const InputDecoration(labelText: "Категория"),
+                );
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => const Text("Ошибка загрузки категорий"),
+            ),
+
+            const SizedBox(height: 8),
+
+            TextButton(
+              onPressed: () async {
+                final name = await showDialog<String>(
+                  context: context,
+                  builder: (_) => _AddCategoryDialog(type: type),
+                );
+
+                if (name != null && name.isNotEmpty) {
+                  final addCategory = ref.read(addCategoryProvider);
+                  await addCategory(name);
+
+                  ref.invalidate(categoriesProvider);
+                }
+              },
+              child: const Text("Добавить категорию"),
+            ),
+
+            const SizedBox(height: 8),
+
             GestureDetector(
               onTap: () async {
                 final picked = await showDatePicker(
@@ -124,6 +168,7 @@ class _EditTransactionSheetState extends ConsumerState<EditTransactionSheet> {
                   amount: amount,
                   date: date.toIso8601String().substring(0, 10),
                   comment: comment,
+                  categoryId: categoryId
                 );
 
                 Navigator.pop(context);
@@ -135,6 +180,47 @@ class _EditTransactionSheetState extends ConsumerState<EditTransactionSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _AddCategoryDialog extends StatefulWidget {
+  final String type;
+
+  const _AddCategoryDialog({required this.type});
+
+  @override
+  State<_AddCategoryDialog> createState() => _AddCategoryDialogState();
+}
+
+class _AddCategoryDialogState extends State<_AddCategoryDialog> {
+  String name = "";
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text("Новая категория"),
+      content: TextField(
+        autofocus: true,
+        decoration: const InputDecoration(
+          labelText: "Название категории",
+          border: OutlineInputBorder(),
+        ),
+        onChanged: (v) => name = v,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text("Отмена"),
+        ),
+        FilledButton(
+          onPressed: () {
+            if (name.trim().isEmpty) return;
+            Navigator.pop(context, name.trim());
+          },
+          child: const Text("Добавить"),
+        ),
+      ],
     );
   }
 }

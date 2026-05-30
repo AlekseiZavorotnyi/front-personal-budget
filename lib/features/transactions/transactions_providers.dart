@@ -29,6 +29,7 @@ final addTransactionProvider = Provider((ref) {
     required double amount,
     required String date,
     required String comment,
+    required String? categoryId,
   }) async {
     await api.dio.post(
       '/api/transactions',
@@ -38,6 +39,7 @@ final addTransactionProvider = Provider((ref) {
         "date": date,
         "comment": comment,
         "description": comment,
+        "categoryId": categoryId,
       },
     );
 
@@ -70,6 +72,7 @@ final updateTransactionProvider = Provider((ref) {
     required double amount,
     required String date,
     required String comment,
+    required String? categoryId,
   }) async {
     await api.dio.patch(
       '/api/transactions/$id',
@@ -78,7 +81,8 @@ final updateTransactionProvider = Provider((ref) {
         "amount": amount,
         "date": date,
         "comment": comment,
-        "description": comment
+        "description": comment,
+        "categoryId": categoryId,
       },
     );
 

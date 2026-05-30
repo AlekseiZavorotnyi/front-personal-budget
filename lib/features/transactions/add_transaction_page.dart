@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:front_personal_budget/features/transactions/transactions_providers.dart';
 import 'package:go_router/go_router.dart';
 
+import 'categories_providers.dart';
+
 class AddTransactionPage extends ConsumerStatefulWidget {
   const AddTransactionPage({super.key});
 
@@ -16,6 +18,7 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage> {
   final _amountController = TextEditingController();
   final _commentController = TextEditingController();
 
+  String? categoryId;
   String type = "expense";
   DateTime date = DateTime.now();
   bool _isSaving = false;
@@ -31,6 +34,7 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage> {
   @override
   Widget build(BuildContext context) {
     final addTransaction = ref.watch(addTransactionProvider);
+    final categoriesAsync = ref.watch(categoriesProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text("Добавить транзакцию")),
@@ -71,6 +75,81 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage> {
 
                   return null;
                 },
+              ),
+
+              const SizedBox(height: 16),
+
+              categoriesAsync.when(
+                data: (categories) {
+                  return DropdownButtonFormField<String>(
+                    initialValue: categoryId,
+                    items: categories
+                        .map((c) => DropdownMenuItem(
+                      value: c.id,
+                      child: Text(c.name),
+                    ))
+                        .toList(),
+                    onChanged: (v) => setState(() => categoryId = v),
+                    decoration: const InputDecoration(labelText: "Категория"),
+                  );
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => const Text("Ошибка загрузки категорий"),
+              ),
+
+              if (categoryId != null)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    tooltip: "Удалить категорию",
+                    onPressed: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          title: const Text("Удалить категорию?"),
+                          content: const Text("Все транзакции с этой категорией останутся, но categoryId станет null."),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text("Отмена"),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text("Удалить"),
+                            ),
+                          ],
+                        ),
+                      );
+
+                      if (confirm == true) {
+                        final deleteCategory = ref.read(deleteCategoryProvider);
+                        await deleteCategory(categoryId!);
+
+                        setState(() => categoryId = null);
+
+                        ref.invalidate(categoriesProvider);
+                      }
+                    },
+                  ),
+                ),
+
+
+              TextButton(
+                onPressed: () async {
+                  final name = await showDialog<String>(
+                    context: context,
+                    builder: (_) => _AddCategoryDialog(),
+                  );
+
+                  if (name != null && name.isNotEmpty) {
+                    final addCategory = ref.read(addCategoryProvider);
+                    await addCategory(name);
+
+                    ref.invalidate(categoriesProvider);
+                  }
+                },
+                child: const Text("Добавить категорию"),
               ),
 
               const SizedBox(height: 16),
@@ -137,6 +216,7 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage> {
                             amount: _parseAmount(_amountController.text)!,
                             date: date.toIso8601String().substring(0, 10),
                             comment: _commentController.text.trim(),
+                            categoryId: categoryId
                           );
 
                           if (context.mounted) {
@@ -192,5 +272,46 @@ class _AddTransactionPageState extends ConsumerState<AddTransactionPage> {
     }
 
     return "Не удалось добавить транзакцию";
+  }
+}
+
+class _AddCategoryDialog extends StatefulWidget {
+  const _AddCategoryDialog();
+
+  @override
+  State<_AddCategoryDialog> createState() => _AddCategoryDialogState();
+}
+
+class _AddCategoryDialogState extends State<_AddCategoryDialog> {
+  String name = "";
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text("Новая категория"),
+      content: TextField(
+        autofocus: true,
+        decoration: const InputDecoration(
+          labelText: "Название категории",
+          border: OutlineInputBorder(),
+        ),
+        onChanged: (v) => name = v,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text("Отмена"),
+        ),
+        FilledButton(
+          onPressed: () {
+            if (name.trim().isEmpty) return;
+
+            // Возвращаем JSON с name и type
+            Navigator.pop(context, name.trim());
+          },
+          child: const Text("Добавить"),
+        ),
+      ],
+    );
   }
 }
