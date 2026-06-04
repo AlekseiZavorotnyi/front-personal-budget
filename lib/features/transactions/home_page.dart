@@ -5,7 +5,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/providers/api_providers.dart';
 import '../../core/services/token_storage.dart';
+import '../stats/stats_page.dart';
 import '../transactions/transactions_providers.dart';
+import 'categories_providers.dart';
 import 'edit_transaction_sheet.dart';
 
 class HomePage extends ConsumerWidget {
@@ -20,6 +22,10 @@ class HomePage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Личный бюджет'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.bar_chart_rounded),
+            onPressed: () => context.push('/stats'),
+          ),
           IconButton(
             tooltip: "Категории",
             icon: const Icon(Icons.category_outlined),
@@ -72,6 +78,19 @@ class HomePage extends ConsumerWidget {
               ),
               loading: () => const CircularProgressIndicator(),
               error: (e, _) => Text('Ошибка: ${_formatError(e)}'),
+            ),
+
+            const SizedBox(height: 24),
+
+            IconButton(
+              icon: const Icon(Icons.filter_list),
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => const TransactionsFilterSheet(),
+                );
+              },
             ),
 
             const SizedBox(height: 24),
@@ -190,5 +209,121 @@ class HomePage extends ConsumerWidget {
     }
 
     return message;
+  }
+}
+
+class TransactionsFilterSheet extends ConsumerStatefulWidget {
+  const TransactionsFilterSheet({super.key});
+
+  @override
+  ConsumerState<TransactionsFilterSheet> createState() =>
+      _TransactionsFilterSheetState();
+}
+
+class _TransactionsFilterSheetState
+    extends ConsumerState<TransactionsFilterSheet> {
+  DateTime? localFrom;
+  DateTime? localTo;
+  String? localCategoryId;
+
+  @override
+  void initState() {
+    super.initState();
+    final filters = ref.read(transactionFiltersProvider);
+    localFrom = filters.from;
+    localTo = filters.to;
+    localCategoryId = filters.categoryId;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filters = ref.watch(transactionFiltersProvider);
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+        left: 16,
+        right: 16,
+        top: 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now(),
+                      initialDate: localFrom ?? DateTime.now(),
+                    );
+                    if (picked != null) {
+                      setState(() => localFrom = picked);
+                    }
+                  },
+                  child: Text(localFrom == null
+                      ? "С даты"
+                      : localFrom.toString().split(" ").first),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now(),
+                      initialDate: localTo ?? DateTime.now(),
+                    );
+                    if (picked != null) {
+                      setState(() => localTo = picked);
+                    }
+                  },
+                  child: Text(localTo == null
+                      ? "По дату"
+                      : localTo.toString().split(" ").first),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          CategoryPickerButton(
+            value: localCategoryId,
+            onChanged: (id) {
+              setState(() => localCategoryId = id);
+            },
+          ),
+
+          const SizedBox(height: 16),
+
+          ElevatedButton(
+            onPressed: () {
+              ref.read(transactionFiltersProvider.notifier).state =
+                  filters.copyWith(
+                    from: localFrom,
+                    to: localTo,
+                    categoryId: localCategoryId,
+                  );
+
+              ref.read(selectedCategoryProvider.notifier).state =
+                  localCategoryId;
+
+              ref.invalidate(transactionsProvider);
+
+              Navigator.pop(context);
+            },
+            child: const Text("Применить"),
+          ),
+
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/auth/login_page.dart';
 import '../../features/auth/register_page.dart';
+import '../../features/stats/stats_page.dart';
 import '../../features/transactions/add_transaction_page.dart';
 import '../../features/transactions/home_page.dart';
 import '../../features/transactions/сategories_page.dart';
@@ -50,6 +51,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/categories',
         builder: (context, state) => const CategoriesPage(),
       ),
+      GoRoute(
+        path: '/stats',
+        builder: (context, state) => const StatsPage(),
+      ),
+
     ],
   );
 });

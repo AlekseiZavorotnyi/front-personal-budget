@@ -19,10 +19,11 @@ final addCategoryProvider = Provider((ref) {
   Future<void> addCategory(String name) async {
     await api.dio.post('/api/categories', data: {
       "name": name,
-      "type": null,
+      "type": "expense",
     });
 
     ref.invalidate(categoriesProvider);
+    ref.invalidate(transactionsProvider);
   }
 
   return addCategory;
@@ -59,3 +60,18 @@ final deleteCategoryProvider = Provider((ref) {
 
   return deleteCategory;
 });
+
+final categorySearchProvider = StateProvider<String>((ref) => "");
+
+final filteredCategoriesProvider = Provider((ref) {
+  final search = ref.watch(categorySearchProvider).toLowerCase();
+  final categories = ref.watch(categoriesProvider).value ?? [];
+
+  if (search.isEmpty) return categories;
+
+  return categories
+      .where((c) => c.name.toLowerCase().contains(search))
+      .toList();
+});
+
+final selectedCategoryProvider = StateProvider<String?>((ref) => null);
