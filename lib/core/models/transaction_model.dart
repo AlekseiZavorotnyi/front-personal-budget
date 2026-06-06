@@ -19,16 +19,18 @@ class TransactionModel {
     required this.syncStatus,
   });
 
-  factory TransactionModel.fromJson(Map<String, dynamic> json) {
+  factory TransactionModel.fromJson(Map<dynamic, dynamic> json) {
     return TransactionModel(
-      id: json['id'],
-      type: json['type'],
+      id: (json['id'] ?? json['localId']).toString(),
+      type: json['type']?.toString() == 'income' ? 'income' : 'expense',
       amount: (json['amount'] as num).toDouble(),
       categoryId: json['categoryId']?.toString(),
       categoryName: json['categoryName']?.toString(),
       date: DateTime.parse(json['date']),
-      comment: json['comment'],
-      syncStatus: json['syncStatus'],
+      comment: (json['comment'] ?? json['description'] ?? json['title'])
+          ?.toString(),
+      syncStatus: json['syncStatus']?.toString() ??
+          (json['localId'] == null ? 'synced' : 'pending'),
     );
   }
 }

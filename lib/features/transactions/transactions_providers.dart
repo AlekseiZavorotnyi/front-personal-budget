@@ -1,18 +1,17 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../core/models/transaction_model.dart';
 import '../../core/providers/api_providers.dart';
+import '../../core/services/local_budget_cache.dart';
 import '../stats/stats_providers.dart';
-import 'package:hive/hive.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-import 'package:uuid/uuid.dart';
-import 'package:web/web.dart' as web;
 
 final balanceProvider = FutureProvider<double>((ref) async {
   final list = await ref.watch(transactionsProvider.future);
   return list.fold<double>(
     0.0,
-        (sum, t) => sum + (t.type == "expense" ? -t.amount : t.amount),
+    (sum, t) => sum + (t.type == "expense" ? -t.amount : t.amount),
   );
 });
 
@@ -44,16 +43,13 @@ class TransactionFilterState {
   }
 }
 
-final transactionFiltersProvider =
-StateProvider<TransactionFilterState>((ref) => const TransactionFilterState());
+final transactionFiltersProvider = StateProvider<TransactionFilterState>(
+  (ref) => const TransactionFilterState(),
+);
 
-
-
-final transactionsProvider = FutureProvider((ref) async {
+final transactionsProvider = FutureProvider<List<TransactionModel>>((ref) async {
   final api = ref.watch(apiClientProvider);
   final filters = ref.watch(transactionFiltersProvider);
-
-  final offlineBox = await Hive.openBox('offline_transactions');
 
   final qp = <String, dynamic>{};
 
@@ -61,8 +57,18 @@ final transactionsProvider = FutureProvider((ref) async {
     qp["categoryId"] = filters.categoryId;
   }
   if (filters.type != null) qp["type"] = filters.type;
-  if (filters.from != null) qp["from"] = filters.from!.toIso8601String().split("T").first;
-  if (filters.to != null) qp["to"] = filters.to!.toIso8601String().split("T").first;
+  if (filters.from != null) {
+    qp["from"] = filters.from!.toIso8601String().split("T").first;
+  }
+  if (filters.to != null) {
+    qp["to"] = filters.to!.toIso8601String().split("T").first;
+  }
+  qp["limit"] = 500;
+
+  final hasFilters = filters.categoryId != null ||
+      filters.type != null ||
+      filters.from != null ||
+      filters.to != null;
 
   List<TransactionModel> serverList = [];
 
@@ -70,18 +76,29 @@ final transactionsProvider = FutureProvider((ref) async {
     final response = await api.dio.get('/api/transactions', queryParameters: qp);
     final data = response.data as Map<String, dynamic>;
     final items = data['items'] as List;
+    await LocalBudgetCache.cacheServerTransactions(
+      items,
+      replace: !hasFilters,
+    );
     serverList = items.map((e) => TransactionModel.fromJson(e)).toList();
-  } catch (_) {
-    // офлайн — просто не грузим сервер
+  } on DioException catch (error) {
+    if (error.response != null) {
+      rethrow;
+    }
+
+    serverList = _applyTransactionFilters(
+      await LocalBudgetCache.readCachedTransactions(),
+      filters,
+    );
   }
 
-  final offlineList = offlineBox.values
-      .map((e) => TransactionModel.fromJson(e))
-      .toList();
+  final offlineList = _applyTransactionFilters(
+    await LocalBudgetCache.readOfflineTransactions(),
+    filters,
+  );
 
-  return [...offlineList, ...serverList];
+  return _sortTransactions([...offlineList, ...serverList]);
 });
-
 
 final addTransactionProvider = Provider((ref) {
   final api = ref.watch(apiClientProvider);
@@ -93,10 +110,8 @@ final addTransactionProvider = Provider((ref) {
     required String comment,
     required String? categoryId,
   }) async {
-    final offlineBox = await Hive.openBox('offline_transactions');
-
     try {
-      await api.dio.post(
+      final response = await api.dio.post(
         '/api/transactions',
         data: {
           "type": type,
@@ -108,38 +123,55 @@ final addTransactionProvider = Provider((ref) {
         },
       );
 
+      await LocalBudgetCache.upsertServerTransaction(response.data);
       ref.invalidate(transactionsProvider);
       ref.invalidate(balanceProvider);
       ref.invalidate(statsSummaryProvider);
       ref.invalidate(statsByCategoryProvider);
       ref.invalidate(statsMonthlyProvider);
-    } catch (_) {
-      final localId = const Uuid().v4();
+    } on DioException catch (error) {
+      if (error.response != null) {
+        rethrow;
+      }
 
-      await offlineBox.put(localId, {
+      final localId = const Uuid().v4();
+      final categoryName = await LocalBudgetCache.categoryNameById(categoryId);
+
+      await LocalBudgetCache.putOfflineTransaction(localId, {
         "localId": localId,
+        "id": localId,
         "type": type,
         "amount": amount,
         "date": date,
         "categoryId": categoryId,
+        "categoryName": categoryName,
+        "comment": comment,
         "title": comment,
         "description": comment,
+        "syncStatus": "pending",
       });
 
       ref.invalidate(transactionsProvider);
+      ref.invalidate(balanceProvider);
+      ref.invalidate(statsSummaryProvider);
+      ref.invalidate(statsByCategoryProvider);
+      ref.invalidate(statsMonthlyProvider);
     }
   }
 
   return addTransaction;
 });
 
-
-
 final deleteTransactionProvider = Provider((ref) {
   final api = ref.watch(apiClientProvider);
 
   Future<void> deleteTransaction(String id) async {
-    await api.dio.delete('/api/transactions/$id');
+    if (await LocalBudgetCache.hasOfflineTransaction(id)) {
+      await LocalBudgetCache.deleteOfflineTransaction(id);
+    } else {
+      await api.dio.delete('/api/transactions/$id');
+      await LocalBudgetCache.removeCachedTransaction(id);
+    }
 
     ref.invalidate(transactionsProvider);
     ref.invalidate(balanceProvider);
@@ -150,8 +182,6 @@ final deleteTransactionProvider = Provider((ref) {
 
   return deleteTransaction;
 });
-
-
 
 final updateTransactionProvider = Provider((ref) {
   final api = ref.watch(apiClientProvider);
@@ -164,17 +194,28 @@ final updateTransactionProvider = Provider((ref) {
     required String comment,
     required String? categoryId,
   }) async {
-    await api.dio.patch(
-      '/api/transactions/$id',
-      data: {
-        "type": type,
-        "amount": amount,
-        "date": date,
-        "comment": comment,
-        "description": comment,
-        "categoryId": categoryId,
-      },
-    );
+    final data = {
+      "type": type,
+      "amount": amount,
+      "date": date,
+      "comment": comment,
+      "description": comment,
+      "categoryId": categoryId,
+    };
+
+    if (await LocalBudgetCache.hasOfflineTransaction(id)) {
+      await LocalBudgetCache.updateOfflineTransaction(id, {
+        ...data,
+        "categoryName": await LocalBudgetCache.categoryNameById(categoryId),
+        "title": comment,
+      });
+    } else {
+      final response = await api.dio.patch(
+        '/api/transactions/$id',
+        data: data,
+      );
+      await LocalBudgetCache.upsertServerTransaction(response.data);
+    }
 
     ref.invalidate(transactionsProvider);
     ref.invalidate(balanceProvider);
@@ -186,32 +227,43 @@ final updateTransactionProvider = Provider((ref) {
   return updateTransaction;
 });
 
-
-Future<void> syncOfflineTransactions(WidgetRef ref) async {
-  final api = ref.read(apiClientProvider);
-  final box = await Hive.openBox('offline_transactions');
-
-  if (box.isEmpty) return;
-
-  final items = box.values.toList();
-
-  try {
-    final response = await api.dio.post(
-      '/sync/transactions',
-      data: {"transactions": items},
-    );
-
-    final synced = response.data["synced"] as List;
-
-    for (final r in synced) {
-      if (r["status"] == "synced") {
-        await box.delete(r["localId"]);
-      }
+List<TransactionModel> _applyTransactionFilters(
+  List<TransactionModel> transactions,
+  TransactionFilterState filters,
+) {
+  return transactions.where((transaction) {
+    if (filters.type != null && transaction.type != filters.type) {
+      return false;
     }
 
-    ref.invalidate(transactionsProvider);
-  } catch (_) {}
+    if (filters.categoryId != null &&
+        transaction.categoryId != filters.categoryId) {
+      return false;
+    }
+
+    final date = DateTime(
+      transaction.date.year,
+      transaction.date.month,
+      transaction.date.day,
+    );
+
+    if (filters.from != null && date.isBefore(_dateOnly(filters.from!))) {
+      return false;
+    }
+
+    if (filters.to != null && date.isAfter(_dateOnly(filters.to!))) {
+      return false;
+    }
+
+    return true;
+  }).toList();
 }
 
+List<TransactionModel> _sortTransactions(List<TransactionModel> transactions) {
+  transactions.sort((a, b) => b.date.compareTo(a.date));
+  return transactions;
+}
 
-
+DateTime _dateOnly(DateTime value) {
+  return DateTime(value.year, value.month, value.day);
+}

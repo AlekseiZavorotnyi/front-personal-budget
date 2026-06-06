@@ -1,50 +1,34 @@
-import 'dart:ui';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/api_providers.dart';
+import '../../core/services/local_budget_cache.dart';
+import '../stats/stats_providers.dart';
 import '../transactions/transactions_providers.dart';
-import 'dart:html' as html;
-import 'package:hive/hive.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-import 'package:uuid/uuid.dart';
+import 'browser_connectivity_stub.dart'
+    if (dart.library.html) 'browser_connectivity_web.dart' as browser;
 
-final syncWorkerProvider = Provider((ref) {
-  ref.listen(connectivityProvider, (prev, next) async {
-    if (next.value == true) {
+final syncWorkerProvider = Provider<void>((ref) {
+  ref.listen<AsyncValue<bool>>(connectivityProvider, (prev, next) async {
+    if (next.valueOrNull == true) {
       await syncOfflineTransactions(ref);
     }
-  });
+  }, fireImmediately: true);
 });
-
 
 final connectivityProvider = StreamProvider<bool>((ref) async* {
-  yield html.window.navigator.onLine ?? false;
-
-  yield* Stream.multi((controller) {
-    html.window.addEventListener('online', (html.Event e) {
-      controller.add(true);
-    });
-
-    html.window.addEventListener('offline', (html.Event e) {
-      controller.add(false);
-    });
-  });
+  yield browser.isOnline;
+  yield* browser.connectivityChanges();
 });
-
-
 
 Future<void> syncOfflineTransactions(Ref ref) async {
   final api = ref.read(apiClientProvider);
-  final box = await Hive.openBox('offline_transactions');
+  final items = await LocalBudgetCache.readOfflineTransactionPayloads();
 
-  if (box.isEmpty) return;
-
-  final items = box.values.toList();
+  if (items.isEmpty) return;
 
   try {
     final response = await api.dio.post(
-      '/sync/transactions',
+      '/api/sync/transactions',
       data: {"transactions": items},
     );
 
@@ -52,11 +36,18 @@ Future<void> syncOfflineTransactions(Ref ref) async {
 
     for (final r in synced) {
       if (r["status"] == "synced") {
-        await box.delete(r["localId"]);
+        final transaction = r["transaction"];
+        if (transaction != null) {
+          await LocalBudgetCache.upsertServerTransaction(transaction);
+        }
+        await LocalBudgetCache.deleteOfflineTransaction(r["localId"]);
       }
     }
 
     ref.invalidate(transactionsProvider);
+    ref.invalidate(balanceProvider);
+    ref.invalidate(statsSummaryProvider);
+    ref.invalidate(statsByCategoryProvider);
+    ref.invalidate(statsMonthlyProvider);
   } catch (_) {}
 }
-

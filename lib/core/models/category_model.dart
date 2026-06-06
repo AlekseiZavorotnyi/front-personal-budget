@@ -1,5 +1,3 @@
-import 'package:flutter/material.dart';
-
 class CategoryModel {
   final String id;
   final String name;
@@ -9,10 +7,10 @@ class CategoryModel {
     required this.name,
   });
 
-  factory CategoryModel.fromJson(Map<String, dynamic> json) {
+  factory CategoryModel.fromJson(Map<dynamic, dynamic> json) {
     return CategoryModel(
-      id: json['id'],
-      name: json['name'],
+      id: json['id'].toString(),
+      name: json['name']?.toString() ?? 'Без названия',
     );
   }
 }
