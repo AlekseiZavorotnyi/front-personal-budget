@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/models/auth/auth_models.dart';
+import '../../core/models/auth_models.dart';
 import '../../core/providers/api_providers.dart';
 import 'register_state.dart';
 

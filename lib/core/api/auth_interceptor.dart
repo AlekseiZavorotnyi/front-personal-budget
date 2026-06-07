@@ -15,52 +15,51 @@ class AuthInterceptor extends Interceptor {
         options.path.endsWith('/register') ||
         options.path.endsWith('/refresh');
 
-    if (token != null && !(isAuthRoute && isPublic)) {
+    if (token != null && token.isNotEmpty && !(isAuthRoute && isPublic)) {
       options.headers['Authorization'] = 'Bearer $token';
+      handler.next(options);
+    } else if (isAuthRoute && isPublic) {
+      handler.next(options);
+    } else {
+      handler.next(options);
     }
-
-    super.onRequest(options, handler);
   }
-
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) async {
     if (err.response?.statusCode == 401) {
       final refresh = TokenStorage.refreshToken;
-      if (refresh == null) {
+
+      if (refresh == null || refresh.isEmpty) {
+        TokenStorage.clear();
         return handler.reject(err);
       }
 
       try {
-        final refreshResp = await dio.post('/api/auth/refresh', data: {
-          'refreshToken': refresh,
-        });
+        final refreshResp = await dio.post(
+          '/api/auth/refresh',
+          data: {'refreshToken': refresh},
+          options: Options(
+            headers: {'Content-Type': 'application/json'},
+          ),
+        );
 
         final newAccess = refreshResp.data['tokens']['accessToken'];
         final newRefresh = refreshResp.data['tokens']['refreshToken'];
 
-        TokenStorage.saveTokens(newAccess, newRefresh);
+        await TokenStorage.saveTokens(newAccess, newRefresh);
 
-        final retry = await dio.request(
-          err.requestOptions.path,
-          data: err.requestOptions.data,
-          queryParameters: err.requestOptions.queryParameters,
-          options: Options(
-            method: err.requestOptions.method,
-            headers: {
-              ...err.requestOptions.headers,
-              'Authorization': 'Bearer $newAccess',
-            },
-          ),
-        );
+        final retryOptions = err.requestOptions;
+        retryOptions.headers['Authorization'] = 'Bearer $newAccess';
 
-        return handler.resolve(retry);
+        final retryResponse = await dio.fetch(retryOptions);
+        return handler.resolve(retryResponse);
       } catch (_) {
         TokenStorage.clear();
         return handler.reject(err);
       }
     }
 
-    return handler.reject(err);
+    handler.next(err);
   }
 }

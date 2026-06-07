@@ -10,7 +10,7 @@ class ApiClient {
     final resolvedBaseUrl = baseUrl ??
         const String.fromEnvironment(
           'API_BASE_URL',
-          defaultValue: 'http://localhost:8080',
+          defaultValue: 'http://193.233.20.47:8080',
         );
 
     final dio = Dio(BaseOptions(

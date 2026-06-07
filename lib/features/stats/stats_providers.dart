@@ -8,6 +8,17 @@ import '../../core/services/local_budget_cache.dart';
 
 final statsSummaryProvider =
     FutureProvider.family((ref, ({DateTime? from, DateTime? to}) params) async {
+      final isLoggedIn = ref.watch(isLoggedInProvider);
+
+      if (!isLoggedIn) {
+        return StatsSummaryResponse(
+          period: StatsPeriod(from: null, to: null),
+          totalIncome: 0,
+          totalExpenses: 0,
+          balance: 0,
+          transactionCount: 0,
+        );
+      }
   final api = ref.watch(apiClientProvider);
 
   final qp = buildQueryParams(from: params.from, to: params.to);
@@ -31,6 +42,16 @@ final statsByCategoryProvider = FutureProvider.family((
   ref,
   ({DateTime? from, DateTime? to, String? type}) params,
 ) async {
+  final isLoggedIn = ref.watch(isLoggedInProvider);
+
+  if (!isLoggedIn) {
+    return CategoryStatsResponse(
+      period: StatsPeriod(from: null, to: null),
+      type: params.type,
+      total: 0,
+      items: [],
+    );
+  }
   final api = ref.watch(apiClientProvider);
 
   final qp = buildQueryParams(
@@ -55,6 +76,14 @@ final statsByCategoryProvider = FutureProvider.family((
 });
 
 final statsMonthlyProvider = FutureProvider.family((ref, int year) async {
+  final isLoggedIn = ref.watch(isLoggedInProvider);
+
+  if (!isLoggedIn) {
+    return MonthlyStatsResponse(
+      year: year,
+      months: [],
+    );
+  }
   final api = ref.watch(apiClientProvider);
   try {
     final response = await api.dio.get('/api/stats/monthly', queryParameters: {

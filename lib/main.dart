@@ -8,6 +8,12 @@ import 'core/services/local_budget_cache.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
-  await LocalBudgetCache.initialize();
+
+  try {
+    await LocalBudgetCache.initialize();
+  } catch (e) {
+    print('Error initializing cache: $e');
+  }
+
   runApp(const ProviderScope(child: App()));
 }

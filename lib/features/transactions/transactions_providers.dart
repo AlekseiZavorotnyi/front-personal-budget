@@ -8,6 +8,11 @@ import '../../core/services/local_budget_cache.dart';
 import '../stats/stats_providers.dart';
 
 final balanceProvider = FutureProvider<double>((ref) async {
+  final isLoggedIn = ref.watch(isLoggedInProvider);
+
+  if (!isLoggedIn) {
+    return 0.0;
+  }
   final list = await ref.watch(transactionsProvider.future);
   return list.fold<double>(
     0.0,
@@ -48,60 +53,71 @@ final transactionFiltersProvider = StateProvider<TransactionFilterState>(
 );
 
 final transactionsProvider = FutureProvider<List<TransactionModel>>((ref) async {
-  final api = ref.watch(apiClientProvider);
-  final filters = ref.watch(transactionFiltersProvider);
+  final isLoggedIn = ref.watch(isLoggedInProvider);
 
-  final qp = <String, dynamic>{};
-
-  if (filters.categoryId != null) {
-    qp["categoryId"] = filters.categoryId;
+  if (!isLoggedIn) {
+    return [];
   }
-  if (filters.type != null) qp["type"] = filters.type;
-  if (filters.from != null) {
-    qp["from"] = filters.from!.toIso8601String().split("T").first;
-  }
-  if (filters.to != null) {
-    qp["to"] = filters.to!.toIso8601String().split("T").first;
-  }
-  qp["limit"] = 500;
-
-  final hasFilters = filters.categoryId != null ||
-      filters.type != null ||
-      filters.from != null ||
-      filters.to != null;
-
-  List<TransactionModel> serverList = [];
 
   try {
-    final response = await api.dio.get('/api/transactions', queryParameters: qp);
-    final data = response.data as Map<String, dynamic>;
-    final items = data['items'] as List;
-    await LocalBudgetCache.cacheServerTransactions(
-      items,
-      replace: !hasFilters,
-    );
-    serverList = items.map((e) => TransactionModel.fromJson(e)).toList();
-  } on DioException catch (error) {
-    if (error.response != null) {
-      rethrow;
+    final api = ref.watch(apiClientProvider);
+    final filters = ref.watch(transactionFiltersProvider);
+
+    final qp = <String, dynamic>{};
+
+    if (filters.categoryId != null) {
+      qp["categoryId"] = filters.categoryId;
+    }
+    if (filters.type != null) qp["type"] = filters.type;
+    if (filters.from != null) {
+      qp["from"] = filters.from!.toIso8601String().split("T").first;
+    }
+    if (filters.to != null) {
+      qp["to"] = filters.to!.toIso8601String().split("T").first;
+    }
+    qp["limit"] = 500;
+
+    final hasFilters = filters.categoryId != null ||
+        filters.type != null ||
+        filters.from != null ||
+        filters.to != null;
+
+    List<TransactionModel> serverList = [];
+
+    try {
+      final response = await api.dio.get('/api/transactions', queryParameters: qp);
+      final data = response.data as Map<String, dynamic>;
+      final items = data['items'] as List;
+      await LocalBudgetCache.cacheServerTransactions(
+        items,
+        replace: !hasFilters,
+      );
+      serverList = items.map((e) => TransactionModel.fromJson(e)).toList();
+    } on DioException catch (error) {
+      if (error.response != null) {
+        rethrow;
+      }
+
+      serverList = _applyTransactionFilters(
+        await LocalBudgetCache.readCachedTransactions(),
+        filters,
+      );
     }
 
-    serverList = _applyTransactionFilters(
-      await LocalBudgetCache.readCachedTransactions(),
+    final offlineList = _applyTransactionFilters(
+      await LocalBudgetCache.readOfflineTransactions(),
       filters,
     );
+
+    final Map<String, TransactionModel> unique = {};
+    for (final t in offlineList) unique[t.id] = t;
+    for (final t in serverList) if (!unique.containsKey(t.id)) unique[t.id] = t;
+
+    return _sortTransactions(unique.values.toList());
+  } catch (e) {
+    print('Error loading transactions: $e');
+    return [];
   }
-
-  final offlineList = _applyTransactionFilters(
-    await LocalBudgetCache.readOfflineTransactions(),
-    filters,
-  );
-
-  final Map<String, TransactionModel> unique = {};
-  for (final t in offlineList) unique[t.id] = t;
-  for (final t in serverList) if (!unique.containsKey(t.id)) unique[t.id] = t;
-
-  return _sortTransactions(unique.values.toList());
 });
 
 final addTransactionProvider = Provider((ref) {

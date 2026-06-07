@@ -1,7 +1,6 @@
 import 'package:dio/dio.dart';
 import '../api/api_client.dart';
-import '../models/auth/auth_models.dart';
-import '../services/token_storage.dart';
+import '../models/auth_models.dart';
 
 class AuthRepository {
   final ApiClient _client;
@@ -22,13 +21,7 @@ class AuthRepository {
       );
     }
 
-    final session = AuthSessionResponse.fromJson(response.data);
-    TokenStorage.saveTokens(
-      session.tokens.accessToken,
-      session.tokens.refreshToken,
-    );
-
-    return session;
+    return AuthSessionResponse.fromJson(response.data);
   }
 
   Future<AuthSessionResponse> register(RegisterRequest request) async {
@@ -45,12 +38,6 @@ class AuthRepository {
       );
     }
 
-    final session = AuthSessionResponse.fromJson(response.data);
-    TokenStorage.saveTokens(
-      session.tokens.accessToken,
-      session.tokens.refreshToken,
-    );
-
-    return session;
+    return AuthSessionResponse.fromJson(response.data);
   }
 }

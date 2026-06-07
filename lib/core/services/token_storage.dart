@@ -19,4 +19,7 @@ class TokenStorage {
     html.window.localStorage.remove(_accessKey);
     html.window.localStorage.remove(_refreshKey);
   }
+
+  static bool get hasTokens =>
+      accessToken != null && accessToken!.isNotEmpty;
 }

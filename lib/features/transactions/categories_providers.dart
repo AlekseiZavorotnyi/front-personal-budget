@@ -6,15 +6,20 @@ import '../../core/models/category_model.dart';
 import '../../core/services/local_budget_cache.dart';
 
 final categoriesProvider = FutureProvider<List<CategoryModel>>((ref) async {
-  final api = ref.watch(apiClientProvider);
+  final isLoggedIn = ref.watch(isLoggedInProvider);
+
+  if (!isLoggedIn) {
+    return [];
+  }
 
   try {
+    final api = ref.watch(apiClientProvider);
     final response = await api.dio.get('/api/categories');
     final items = response.data['items'] as List;
     await LocalBudgetCache.cacheCategories(items);
-
     return items.map((e) => CategoryModel.fromJson(e)).toList();
-  } catch (_) {
+  } catch (e) {
+    print('Error loading categories: $e');
     return _readLocalCategoriesSafely();
   }
 });
