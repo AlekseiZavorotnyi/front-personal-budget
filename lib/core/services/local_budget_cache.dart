@@ -97,6 +97,16 @@ class LocalBudgetCache {
     return box.containsKey(id);
   }
 
+  static Future<bool> isPendingOfflineCreate(String id) async {
+    final box = await Hive.openBox(offlineTransactionsBoxName);
+    final raw = box.get(id);
+    if (raw is! Map) {
+      return false;
+    }
+
+    return raw['isUpdate'] != true;
+  }
+
   static Future<void> updateOfflineTransaction(
     String id,
     Map<String, dynamic> transaction,
@@ -188,6 +198,54 @@ class LocalBudgetCache {
   static Future<void> removeCategory(String id) async {
     final box = await Hive.openBox(cachedCategoriesBoxName);
     await box.delete(id);
+  }
+
+  static Future<void> remapCategoryId({
+    required String oldId,
+    required String newId,
+    String? newName,
+  }) async {
+    if (oldId == newId) {
+      return;
+    }
+
+    final cachedTx = await Hive.openBox(cachedTransactionsBoxName);
+    final offlineTx = await Hive.openBox(offlineTransactionsBoxName);
+
+    for (final box in [cachedTx, offlineTx]) {
+      for (final key in box.keys.toList()) {
+        final raw = box.get(key);
+        if (raw is! Map) {
+          continue;
+        }
+
+        final item = raw.map((k, v) => MapEntry(k.toString(), v));
+        var changed = false;
+
+        if (item['categoryId'] == oldId) {
+          item['categoryId'] = newId;
+          if (newName != null) {
+            item['categoryName'] = newName;
+          }
+          changed = true;
+        }
+
+        if (item['originalCategoryId'] == oldId) {
+          item['originalCategoryId'] = newId;
+          changed = true;
+        }
+
+        if (changed) {
+          await box.put(key, item);
+        }
+      }
+    }
+
+    final cachedCategories = await Hive.openBox(cachedCategoriesBoxName);
+    await cachedCategories.delete(oldId);
+    if (newName != null) {
+      await cachedCategories.put(newId, {'id': newId, 'name': newName});
+    }
   }
 
   static Future<List<CategoryModel>> readCachedCategories() async {
@@ -351,6 +409,10 @@ class LocalBudgetCache {
 
     final date = _normalizeDate(_stringOrNull(json['date']));
 
+    final isUpdate = json['isUpdate'] == true;
+    final originalId = _stringOrNull(json['originalId']);
+    final originalCategoryId = _stringOrNull(json['originalCategoryId']);
+
     return {
       if (localId != null) 'localId': localId,
       'id': id,
@@ -364,6 +426,10 @@ class LocalBudgetCache {
       'comment': rawComment,
 
       'syncStatus': _stringOrNull(json['syncStatus']) ?? defaultSyncStatus,
+
+      if (isUpdate) 'isUpdate': true,
+      if (originalId != null) 'originalId': originalId,
+      if (originalCategoryId != null) 'originalCategoryId': originalCategoryId,
     };
   }
 

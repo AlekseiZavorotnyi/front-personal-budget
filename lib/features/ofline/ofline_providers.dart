@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/api_providers.dart';
@@ -20,6 +21,19 @@ final connectivityProvider = StreamProvider<bool>((ref) async* {
   yield browser.isOnline;
   yield* browser.connectivityChanges();
 });
+
+bool _isSyncing = false;
+
+Future<void> syncAll(Ref ref) async {
+  if (_isSyncing) return;
+  _isSyncing = true;
+  try {
+    await syncOfflineCategories(ref);
+    await syncOfflineTransactions(ref);
+  } finally {
+    _isSyncing = false;
+  }
+}
 
 Future<void> syncOfflineTransactions(Ref ref) async {
   final api = ref.read(apiClientProvider);
@@ -44,7 +58,9 @@ Future<void> syncOfflineTransactions(Ref ref) async {
           await LocalBudgetCache.upsertServerTransaction(transaction);
         }
 
-        await LocalBudgetCache.deleteOfflineTransaction(localId);
+        if (localId != null) {
+          await LocalBudgetCache.deleteOfflineTransaction(localId.toString());
+        }
       }
     }
 
@@ -63,18 +79,40 @@ Future<void> syncOfflineCategories(Ref ref) async {
   if (items.isEmpty) return;
 
   for (final item in items) {
-    final id = item['id'];
-    final name = item['name'];
+    final id = item['id'].toString();
+    final name = item['name']?.toString();
     final op = item['operation'];
 
     try {
       if (op == 'create') {
-        final response = await api.dio.post('/api/categories', data: {
-          'name': name,
-          'type': "expense",
-        });
+        String? newId;
 
-        await LocalBudgetCache.upsertCategory(response.data);
+        try {
+          final response = await api.dio.post('/api/categories', data: {
+            'name': name,
+            'type': "expense",
+          });
+
+          await LocalBudgetCache.upsertCategory(response.data);
+          newId = response.data['id']?.toString();
+        } on DioException catch (error) {
+          if (error.response == null) {
+            rethrow;
+          }
+
+          newId = await _resolveServerCategoryId(api, name);
+          if (newId == null) {
+            rethrow;
+          }
+        }
+
+        if (newId != null && newId.isNotEmpty) {
+          await LocalBudgetCache.remapCategoryId(
+            oldId: id,
+            newId: newId,
+            newName: name,
+          );
+        }
       }
 
       if (op == 'update') {
@@ -100,7 +138,18 @@ Future<void> syncOfflineCategories(Ref ref) async {
   ref.invalidate(transactionsProvider);
 }
 
-Future<void> syncAll(Ref ref) async {
-  await syncOfflineCategories(ref);
-  await syncOfflineTransactions(ref);
+Future<String?> _resolveServerCategoryId(dynamic api, String? name) async {
+  if (name == null) return null;
+
+  try {
+    final response = await api.dio.get('/api/categories');
+    final items = response.data['items'] as List;
+    for (final category in items) {
+      if (category['name']?.toString() == name) {
+        return category['id']?.toString();
+      }
+    }
+  } catch (_) {}
+
+  return null;
 }

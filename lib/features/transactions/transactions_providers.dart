@@ -220,18 +220,20 @@ final updateTransactionProvider = Provider((ref) {
       }
 
       final categoryName = await LocalBudgetCache.categoryNameById(categoryId);
+      final isPendingCreate =
+          await LocalBudgetCache.isPendingOfflineCreate(id);
 
       await LocalBudgetCache.putOfflineTransaction(
         id,
         {
           "id": id,
-          "originalId": id,
-          "isUpdate": true,
+          if (!isPendingCreate) "originalId": id,
+          if (!isPendingCreate) "isUpdate": true,
+          if (!isPendingCreate) "originalCategoryId": categoryId,
           "type": type,
           "amount": amount,
           "date": date,
           "categoryId": categoryId,
-          "originalCategoryId": categoryId,
           "categoryName": categoryName,
           "comment": comment,
           "title": comment,
