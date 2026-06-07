@@ -97,7 +97,11 @@ final transactionsProvider = FutureProvider<List<TransactionModel>>((ref) async 
     filters,
   );
 
-  return _sortTransactions([...offlineList, ...serverList]);
+  final Map<String, TransactionModel> unique = {};
+  for (final t in offlineList) unique[t.id] = t;
+  for (final t in serverList) if (!unique.containsKey(t.id)) unique[t.id] = t;
+
+  return _sortTransactions(unique.values.toList());
 });
 
 final addTransactionProvider = Provider((ref) {
@@ -203,18 +207,38 @@ final updateTransactionProvider = Provider((ref) {
       "categoryId": categoryId,
     };
 
-    if (await LocalBudgetCache.hasOfflineTransaction(id)) {
-      await LocalBudgetCache.updateOfflineTransaction(id, {
-        ...data,
-        "categoryName": await LocalBudgetCache.categoryNameById(categoryId),
-        "title": comment,
-      });
-    } else {
+    try {
       final response = await api.dio.patch(
         '/api/transactions/$id',
         data: data,
       );
+
       await LocalBudgetCache.upsertServerTransaction(response.data);
+    } on DioException catch (error) {
+      if (error.response != null) {
+        rethrow;
+      }
+
+      final categoryName = await LocalBudgetCache.categoryNameById(categoryId);
+
+      await LocalBudgetCache.putOfflineTransaction(
+        id,
+        {
+          "id": id,
+          "originalId": id,
+          "isUpdate": true,
+          "type": type,
+          "amount": amount,
+          "date": date,
+          "categoryId": categoryId,
+          "originalCategoryId": categoryId,
+          "categoryName": categoryName,
+          "comment": comment,
+          "title": comment,
+          "description": comment,
+          "syncStatus": "pending",
+        },
+      );
     }
 
     ref.invalidate(transactionsProvider);
@@ -226,6 +250,8 @@ final updateTransactionProvider = Provider((ref) {
 
   return updateTransaction;
 });
+
+
 
 List<TransactionModel> _applyTransactionFilters(
   List<TransactionModel> transactions,

@@ -113,6 +113,11 @@ class LocalBudgetCache {
     final updated = normalizeTransactionJson({
       ...current,
       ...transaction,
+      'categoryId': transaction['categoryId'] ?? current['categoryId'] ?? '',
+      'categoryName': transaction['categoryName'] ?? current['categoryName'] ?? '',
+      'title': transaction['comment'] ?? current['title'] ?? '',
+      'description': transaction['comment'] ?? current['description'] ?? '',
+      'comment': transaction['comment'] ?? current['comment'] ?? '',
       'id': id,
       'localId': current['localId'] ?? id,
       'syncStatus': 'pending',
@@ -131,22 +136,28 @@ class LocalBudgetCache {
   }
 
   static Future<List<Map<String, dynamic>>>
-      readOfflineTransactionPayloads() async {
+  readOfflineTransactionPayloads() async {
     final box = await Hive.openBox(offlineTransactionsBoxName);
     return box.values.map((item) {
       final json = normalizeTransactionJson(
         item,
         defaultSyncStatus: 'pending',
       );
+      final originalId = json['originalId'] ?? json['id'];
+      final originalCategoryId = json['originalCategoryId'] ?? json['categoryId'];
+      final isUpdate = json['isUpdate'] == true;
 
       return {
         'localId': json['localId'] ?? json['id'],
         'type': json['type'],
         'amount': json['amount'],
-        'categoryId': _isUuid(json['categoryId']) ? json['categoryId'] : null,
+        'categoryId': isUpdate ? originalCategoryId : (_isUuid(json['categoryId']) ? json['categoryId'] : null),
         'date': json['date'],
         'title': json['title'] ?? json['comment'],
         'description': json['description'] ?? json['comment'],
+        'comment': json['comment'],
+        if (isUpdate) 'id': originalId,
+        'isUpdate': isUpdate,
       };
     }).toList();
   }
@@ -209,6 +220,108 @@ class LocalBudgetCache {
     return categories;
   }
 
+  static Future<void> putOfflineCategory(Map<String, dynamic> json) async {
+    final box = await Hive.openBox(offlineCategoriesBoxName);
+    await box.put(json['id'], {
+      ...json,
+      'syncStatus': 'pending',
+    });
+
+    final cached = await Hive.openBox(cachedCategoriesBoxName);
+    await cached.put(json['id'], {
+      'id': json['id'],
+      'name': json['name'],
+    });
+  }
+
+  static Future<void> deleteOfflineCategory(String id) async {
+    final offline = await Hive.openBox(offlineCategoriesBoxName);
+    final cached = await Hive.openBox(cachedCategoriesBoxName);
+
+    await offline.put(id, {
+      'id': id,
+      'operation': 'delete',
+      'syncStatus': 'pending',
+    });
+
+    await cached.delete(id);
+  }
+
+  static Future<List<Map<String, dynamic>>> readOfflineCategories() async {
+    final box = await Hive.openBox(offlineCategoriesBoxName);
+    return box.values.map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  static Future<void> removeOfflineCategory(String id) async {
+    final box = await Hive.openBox(offlineCategoriesBoxName);
+    await box.delete(id);
+  }
+
+  static Future<void> updateCategoryNameInTransactions({
+    required String categoryId,
+    required String newName,
+  }) async {
+    final cached = await Hive.openBox(cachedTransactionsBoxName);
+    final offline = await Hive.openBox(offlineTransactionsBoxName);
+
+    for (final key in cached.keys) {
+      final item = normalizeTransactionJson(cached.get(key));
+      if (item['categoryId'] == categoryId) {
+        await cached.put(key, {
+          ...item,
+          'categoryName': newName,
+        });
+      }
+    }
+
+    for (final key in offline.keys) {
+      final item = normalizeTransactionJson(offline.get(key));
+      if (item['categoryId'] == categoryId) {
+        await offline.put(key, {
+          ...item,
+          'categoryName': newName,
+        });
+      }
+    }
+  }
+
+  static Future<void> updateCachedTransactionComment(
+      String id,
+      String newComment,
+      ) async {
+    final box = await Hive.openBox(cachedTransactionsBoxName);
+    if (!box.containsKey(id)) return;
+
+    final current = normalizeTransactionJson(box.get(id));
+    final updated = {
+      ...current,
+      'comment': newComment,
+      'title': newComment,
+      'description': newComment,
+    };
+
+    await box.put(id, updated);
+  }
+
+  static Future<List<TransactionModel>> readAllTransactionsUnique() async {
+    final offline = await readOfflineTransactions();
+    final cached = await readCachedTransactions();
+
+    final Map<String, TransactionModel> unique = {};
+
+    for (final t in offline) {
+      unique[t.id] = t;
+    }
+
+    for (final t in cached) {
+      if (!unique.containsKey(t.id)) {
+        unique[t.id] = t;
+      }
+    }
+
+    return unique.values.toList();
+  }
+
   static Future<String?> categoryNameById(String? id) async {
     if (id == null) {
       return null;
@@ -224,16 +337,18 @@ class LocalBudgetCache {
   }
 
   static Map<String, dynamic> normalizeTransactionJson(
-    dynamic item, {
-    String defaultSyncStatus = 'synced',
-  }) {
+      dynamic item, {
+        String defaultSyncStatus = 'synced',
+      }) {
     final json = _toStringMap(item);
     final localId = _stringOrNull(json['localId']);
-    final id =
-        _stringOrNull(json['id']) ?? localId ?? _fallbackTransactionId(json);
-    final comment = _stringOrNull(json['comment']) ??
-        _stringOrNull(json['description']) ??
-        _stringOrNull(json['title']);
+    final id = _stringOrNull(json['id']) ?? localId ?? _fallbackTransactionId(json);
+    final rawComment =
+        _stringOrNull(json['comment']) ??
+            _stringOrNull(json['description']) ??
+            _stringOrNull(json['title']) ??
+            '';
+
     final date = _normalizeDate(_stringOrNull(json['date']));
 
     return {
@@ -241,12 +356,13 @@ class LocalBudgetCache {
       'id': id,
       'type': _normalizeType(json['type']),
       'amount': _normalizeAmount(json['amount']),
-      'categoryId': _stringOrNull(json['categoryId']),
-      'categoryName': _stringOrNull(json['categoryName']),
+      'categoryId': _stringOrNull(json['categoryId']) ?? '',
+      'categoryName': _stringOrNull(json['categoryName']) ?? '',
       'date': date,
-      'title': _stringOrNull(json['title']) ?? comment,
-      'description': _stringOrNull(json['description']) ?? comment,
-      'comment': comment,
+      'title': _stringOrNull(json['title']) ?? rawComment,
+      'description': _stringOrNull(json['description']) ?? rawComment,
+      'comment': rawComment,
+
       'syncStatus': _stringOrNull(json['syncStatus']) ?? defaultSyncStatus,
     };
   }

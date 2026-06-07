@@ -23,7 +23,7 @@ class TransactionModel {
     return TransactionModel(
       id: (json['id'] ?? json['localId']).toString(),
       type: json['type']?.toString() == 'income' ? 'income' : 'expense',
-      amount: (json['amount'] as num).toDouble(),
+      amount: double.tryParse(json['amount']?.toString() ?? '') ?? 0.0,
       categoryId: json['categoryId']?.toString(),
       categoryName: json['categoryName']?.toString(),
       date: DateTime.parse(json['date']),

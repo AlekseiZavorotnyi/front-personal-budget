@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:front_personal_budget/features/transactions/transactions_providers.dart';
 import '../../core/providers/api_providers.dart';
@@ -30,11 +31,24 @@ final addCategoryProvider = Provider((ref) {
   final api = ref.watch(apiClientProvider);
 
   Future<void> addCategory(String name) async {
-    final response = await api.dio.post('/api/categories', data: {
-      "name": name,
-      "type": "expense",
-    });
-    await LocalBudgetCache.upsertCategory(response.data);
+    try {
+      final response = await api.dio.post('/api/categories', data: {
+        "name": name,
+        "type": "expense",
+      });
+
+      await LocalBudgetCache.upsertCategory(response.data);
+    } on DioException catch (error) {
+      if (error.response != null) rethrow;
+
+      final localId = "local-${DateTime.now().millisecondsSinceEpoch}";
+
+      await LocalBudgetCache.putOfflineCategory({
+        "id": localId,
+        "name": name,
+        "operation": "create",
+      });
+    }
 
     ref.invalidate(categoriesProvider);
     ref.invalidate(transactionsProvider);
@@ -43,6 +57,7 @@ final addCategoryProvider = Provider((ref) {
   return addCategory;
 });
 
+
 final updateCategoryProvider = Provider((ref) {
   final api = ref.watch(apiClientProvider);
 
@@ -50,11 +65,31 @@ final updateCategoryProvider = Provider((ref) {
     required String id,
     required String name,
   }) async {
-    final response = await api.dio.patch('/api/categories/$id', data: {
-      "name": name,
-      "type": null,
-    });
-    await LocalBudgetCache.upsertCategory(response.data);
+    try {
+      final response = await api.dio.patch('/api/categories/$id', data: {
+        "name": name,
+        "type": "expense",
+      });
+
+      await LocalBudgetCache.upsertCategory(response.data);
+      await LocalBudgetCache.updateCategoryNameInTransactions(
+        categoryId: id,
+        newName: name,
+      );
+    } on DioException catch (error) {
+      if (error.response != null) rethrow;
+
+      await LocalBudgetCache.putOfflineCategory({
+        "id": id,
+        "name": name,
+        "operation": "update",
+      });
+
+      await LocalBudgetCache.updateCategoryNameInTransactions(
+        categoryId: id,
+        newName: name,
+      );
+    }
 
     ref.invalidate(categoriesProvider);
     ref.invalidate(transactionsProvider);
@@ -67,10 +102,17 @@ final deleteCategoryProvider = Provider((ref) {
   final api = ref.watch(apiClientProvider);
 
   Future<void> deleteCategory(String id) async {
-    await api.dio.delete('/api/categories/$id');
-    await LocalBudgetCache.removeCategory(id);
+    try {
+      await api.dio.delete('/api/categories/$id');
+      await LocalBudgetCache.removeCategory(id);
+    } on DioException catch (error) {
+      if (error.response != null) rethrow;
+
+      await LocalBudgetCache.deleteOfflineCategory(id);
+    }
 
     ref.invalidate(categoriesProvider);
+    ref.invalidate(transactionsProvider);
   }
 
   return deleteCategory;
